@@ -111,6 +111,15 @@ function hideSplash() {
 function settleSplash(since) {
   return new Promise(r => setTimeout(r, Math.max(0, S.splashMs - (performance.now() - since)))).then(hideSplash);
 }
+// The boot fallback (main.js): the bar must never be a dead end, so it comes down even when the boot hung -
+// but it must not come down on the signed-in shell. With nobody signed in, the shell is out of the page only
+// while the dialog is open (style.css body:has(#login[open]) .app), so this opens the dialog first, the same
+// order the ordinary path takes. A boot that hung while restoring a session keeps the screen it drew: there is
+// a session behind it, and the shell marks the store stale, so the next screen change re-reads.
+function bootStall() {
+  if (!user() && !$('login')?.open) showLogin();
+  hideSplash();
+}
 // Email of the session that expired. The draft in #view survives the prompt, but only for the same person.
 let expiredFor = null;
 function loginMsg(t) {
@@ -133,8 +142,17 @@ function setFavicon(src) {
   l.setAttribute('href', src || favDefault);
 }
 // Read once, at boot, before the sign-in dialog opens (main.js). Never throws: see Api.publicBrand.
+// Bounded, because main.js awaits it on the one path that opens that dialog: a read that never answers would
+// hold the dialog back for as long as the link hangs, and the school's name on the form is worth no such wait.
+// Past S.brandMs the dialog opens wearing the default mark and no name, which is what it already does for a
+// project that has neither.
 async function loadBrand() {
-  let b = Auth.mode() === 'live' ? await Api.publicBrand() : null;
+  let t,
+    late = new Promise(r => {
+      t = setTimeout(() => r(null), S.brandMs);
+    }),
+    b = Auth.mode() === 'live' ? await Promise.race([Api.publicBrand(), late]) : null;
+  clearTimeout(t);
   if (!b) return;
   Auth.setSchoolName(b.school);
   pubLogo = b.logo;
@@ -246,8 +264,11 @@ async function logout() {
   S.draft = [];
   render();
   setUser('');
-  await settleSplash(t0);
+  // The dialog opens first, for the same reason it does at boot (main.js): render() above has just drawn the
+  // first tab under the bar, and hiding the bar fades rather than cuts, so the dialog has to be open - and the
+  // shell therefore out of the page - before the fade starts, or that tab shows through it.
   showLogin();
+  await settleSplash(t0);
 }
 // What every write ends with: re-read the slices it touched (plus the audit trail, which every write extends) from the
 // server and redraw. Nothing here writes; the screens call it after a write has succeeded. Resolves once redrawn.
@@ -740,6 +761,7 @@ const shell = {
   showSplash,
   hideSplash,
   settleSplash,
+  bootStall,
   setupNotice,
 };
 export { App, shell, printRegister };

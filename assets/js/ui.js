@@ -48,6 +48,9 @@ export const S = {
   brand: '',
   refreshMs: 12000,
   splashMs: 2000,
+  // How long the pre-auth read of the school's name and mark may take before the sign-in dialog opens without
+  // them (app.js loadBrand). Well inside the boot fallback in main.js, so the ordinary path still decides.
+  brandMs: 5000,
   // How long the app may sit untouched before it signs itself out (app.js). Counted only while the app is
   // open: time with the browser closed is the remembered-device deadline's business, not this one's. A field
   // rather than a constant so a test can shorten it, like splashMs.

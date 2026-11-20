@@ -10,13 +10,15 @@ import * as Auth from './auth.js';
 import * as Store from './store.js';
 
 // The loading bar must never be a dead end: if the boot below hangs (a stored session whose profile fetch
-// never answers) drop it anyway, rather than leave the bar turning for ever.
-setTimeout(shell.hideSplash, 9000);
+// never answers) drop it anyway, rather than leave the bar turning for ever. bootStall drops it the way the
+// ordinary path does - with nobody signed in, the sign-in dialog opens first, so the bar never gives way to a
+// shell that has no session behind it (app.js).
+setTimeout(shell.bootStall, 9000);
 
 // The bar is up from the markup, so it is the first thing on screen whoever opens the app. What follows it
 // depends on who is signed in: a stored session keeps it up while that session's data arrives, then lands on
-// the first tab; with nobody signed in there is nothing to load, so the bar drops and the sign-in dialog
-// opens over an empty screen. The load that follows a sign-in raises the bar again (doLogin in app.js).
+// the first tab; with nobody signed in there is nothing to load, so the sign-in dialog opens behind the bar
+// and the bar then drops onto it. The load that follows a sign-in raises the bar again (doLogin in app.js).
 try {
   await Auth.init();
 } catch {}
@@ -53,10 +55,15 @@ document.addEventListener('click', e => {
 });
 // performance.now() counts from navigation, so settleSplash(0) holds the bar for S.splashMs from the moment
 // the page opened rather than from the moment the data landed. A restore does not await it: the rest of the
-// wait is cosmetic. A sign-in does, so the dialog opens after the bar has gone rather than over it.
+// wait is cosmetic.
 if (restoring) shell.settleSplash(0).then(shell.setupNotice);
 else {
-  await shell.settleSplash(0);
+  // Order matters, and it is the dialog first. The bar is the only thing covering the first tab that
+  // App.render() has already drawn, and hiding the bar FADES (.splash.out), so dropping it before the dialog
+  // is open uncovers that tab for the length of the fade - plus however long the brand fetch still takes.
+  // Opening the dialog first takes the shell out of the page entirely (style.css body:has(#login[open]) .app),
+  // so the fade reveals nothing but the backdrop, whatever the network does.
   await brand;
   App.showLogin();
+  await shell.settleSplash(0);
 }
